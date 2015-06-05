@@ -98,5 +98,5 @@ if ( __name__ == "__main__"):
    Handler = AppxMetadata()
    parser.setContentHandler( Handler )
 
-   parser.parse('Maps.xml')
+   parser.parse('test/Maps.xml')
    print(Handler)
