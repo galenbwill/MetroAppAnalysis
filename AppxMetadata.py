@@ -1,11 +1,13 @@
+__author__ = 'charles'
 import xml.sax
 
-class AppxMetadata ( xml.sax.ContentHandler ):
+class AppxMetadataSaxHandler ( xml.sax.ContentHandler ):
 
     CATEGORY_IN_PROCESS = 'windows.activatableClass.inProcessServer'
     CATEGORY_PROXY_STUB = 'windows.activatableClass.proxyStub'
 
-    def __init__(self):
+    def __init__(self, show_all=False):
+        self.show_all = show_all
         self.CurrentData = ''
         self.CurrentCategory = ''
 
@@ -21,11 +23,13 @@ class AppxMetadata ( xml.sax.ContentHandler ):
         self.proxyStubs = []
         self.fileTypes = []
         self.framework = None
+        self.tileUpdateURI = None
+        self.tileUpdateFrequency = None
 
     def handleApplication(self, attributes):
         self.id = attributes.get('Id')
         self.executable = attributes.get('Executable')
-        if self.executable == None:
+        if self.executable is None:
             self.type = 'WinJS'
         else:
             self.type = 'Native'
@@ -45,6 +49,10 @@ class AppxMetadata ( xml.sax.ContentHandler ):
 
     def handleExtension(self, attributes):
         self.CurrentCategory = attributes.get('Category')
+
+    def handleTileUpdate(self, attributes):
+        self.tileUpdateURI = attributes.get('UriTemplate')
+        self.tileUpdateFrequency = attributes.get('Recurrence')
 
     def characters(self, content):
         if len(content.strip()):
@@ -72,6 +80,8 @@ class AppxMetadata ( xml.sax.ContentHandler ):
             self.handleProtocol(attributes)
         elif tag == 'Extension':
             self.handleExtension(attributes)
+        elif tag == 'wb:TileUpdate':
+            self.handleTileUpdate(attributes)
 #         elif tag == 'Framework':
 #             self.handleFramework(attributes)
 
@@ -79,37 +89,59 @@ class AppxMetadata ( xml.sax.ContentHandler ):
     def endElement(self, tag):
         pass
 
+    def show_prop(self, prop, label, joiner=u', ', show_all=False):
+        value = self.__dict__[prop]
+        if show_all is False and value is None:
+            return ''
+        if isinstance(value, list):
+            if show_all is False and len(value) == 0:
+                return ''
+            value = joiner.join(value)
+        return '%s: %s' % (label, value)
+
+    PROPS = [
+        ('name', 'App'),
+        'Type',
+        'Executable',
+        'Architecture',
+        'Capabilities',
+        ('deviceCapabilities', 'Device Capabilities'),
+        'Protocols',
+        ('inProcessServers', 'In Process Servers'),
+        ('proxyStubs', 'Proxy Stubs'),
+        ('fileTypes', 'File Types')
+    ]
+
     def __str__(self):
-        if self.framework == True:
+        if self.framework is True:
             st = 'Framework: ' + self.name
         else:
-            st =  'App: ' + self.id
-            st += '\n\tName: ' + self.name
-            st += '\n\tType: ' + self.type
-            if self.executable != None:
-                st += '\n\tExecutable: ' + self.executable
-            st += '\n\tArchitecture: ' + self.architecture
-
-            st += '\n\tCapabilities: ' + ', '.join(self.capabilities)
-            st += '\n\tDevice Capabilities: ' + ', '.join(self.deviceCapabilities)
-            st += '\n\tProtocols: ' + ', '.join(self.protocols)
-            st += '\n\tIn Process Servers: ' + ', '.join(self.inProcessServers)
-            st += '\n\tProxy Stubs: ' + ', '.join(self.proxyStubs)
-            st += '\n\tFile Types: ' + ', '.join(self.fileTypes)
-
+            st = ''
+            for name in self.PROPS:
+                if isinstance(name, tuple):
+                    prop = name[0]
+                    name = name[1]
+                else:
+                    prop = name.lower()
+                p = self.show_prop(prop, name)
+                if len(p):
+                    if len(st):
+                        st += '\n\t'
+                    st += p
         return st
 
 class AppxMetadataParser:
+
     def __init__(self):
         # create an XMLReader
         self.parser = xml.sax.make_parser()
-        # turn off namepsaces
+        # turn off namespaces
         self.parser.setFeature(xml.sax.handler.feature_namespaces, 0)
+        self.urls = []
 
-
-    def parse(self, source):
+    def parse(self, source, show_all=False):
         # override the default ContextHandler
-        self.Handler = AppxMetadata()
+        self.Handler = AppxMetadataSaxHandler(show_all=show_all)
         self.parser.setContentHandler( self.Handler )
         self.parser.parse(source)
         return self
@@ -121,11 +153,11 @@ if ( __name__ == "__main__"):
 
     # create an XMLReader
     parser = xml.sax.make_parser()
-    # turn off namepsaces
+    # turn off namespaces
     parser.setFeature(xml.sax.handler.feature_namespaces, 0)
 
     # override the default ContextHandler
-    Handler = AppxMetadata()
+    Handler = AppxMetadataSaxHandler()
     parser.setContentHandler( Handler )
 
     parser.parse('test/Maps.xml')
