@@ -23,6 +23,7 @@ import os
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 from AppxMetadata import AppxMetadataParser
+from MetroAppConfiguration import MetroAppConfiguration
 
 __all__ = []
 __version__ = 0.1
@@ -37,6 +38,9 @@ WINDRIVE = 'C:\\'
 if not os.path.ismount(WINDRIVE):
     WINDRIVE = ''
 default_path = os.path.join(WINDRIVE, 'Program Files', 'WindowsApps')
+
+APPX_MANIFEST = 'AppxManifest.xml'
+CONFIG_SQLITE = 'configuration.sqlite'
 
 class CLIError(Exception):
     '''Generic exception to raise and log different fatal errors.'''
@@ -80,8 +84,8 @@ USAGE
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument("-r", "--recursive", dest="recurse", action="store_true", help="recurse into subfolders [default: %(default)s]")
         parser.add_argument("-v", "--verbose", dest="verbose", action="count", help="set verbosity level [default: %(default)s]")
-        parser.add_argument("-i", "--include", dest="include", help="only include paths matching this regex pattern. Note: exclude is given preference over include. [default: %(default)s]", metavar="RE" )
-        parser.add_argument("-e", "--exclude", dest="exclude", help="exclude paths matching this regex pattern. [default: %(default)s]", metavar="RE" )
+#         parser.add_argument("-i", "--include", dest="include", help="only include paths matching this regex pattern. Note: exclude is given preference over include. [default: %(default)s]", metavar="RE" )
+#         parser.add_argument("-e", "--exclude", dest="exclude", help="exclude paths matching this regex pattern. [default: %(default)s]", metavar="RE" )
         parser.add_argument('-V', '--version', action='version', version=program_version_message)
         parser.add_argument(dest="paths", help="paths to folder(s) with source file(s) [default: %(default)s]", metavar="path", nargs='*',
                             default=default_path)
@@ -92,8 +96,8 @@ USAGE
         paths = args.paths if isinstance(args.paths, list) else [args.paths]
         verbose = args.verbose
         recurse = args.recurse
-        inpat = args.include
-        expat = args.exclude
+#         inpat = args.include
+#         expat = args.exclude
 
         if verbose > 0:
             print("Verbose mode on")
@@ -102,8 +106,8 @@ USAGE
             else:
                 print("Recursive mode off")
 
-        if inpat and expat and inpat == expat:
-            raise CLIError("include and exclude pattern are equal! Nothing will be processed.")
+#         if inpat and expat and inpat == expat:
+#             raise CLIError("include and exclude pattern are equal! Nothing will be processed.")
 
         if verbose > 0:
             print('paths: %s' % paths)
@@ -112,27 +116,50 @@ USAGE
             if verbose > level:
                 print('LOG: %s' % msg)
 
+        def dump_manifest(path):
+            print(parser.parse(path))
+            if isinstance(path, str) and os.path.isfile(path):
+                print('\tManifest: %s\n' % path)
+
+        def dump_config(path):
+            print(MetroAppConfiguration().extract_urls(path))
+
         parser = AppxMetadataParser()
         for inpath in paths:
             if inpath == '-':
                 VLOG("-")
-                print(parser.parse(sys.stdin))
+                dump_manifest(sys.stdin)
             elif os.path.isfile(inpath):
                 VLOG("File: %s" % inpath)
-                print(parser.parse(inpath))
+                dump_manifest(inpath)
             elif os.path.isdir(inpath):
                 VLOG("Dir: %s" % inpath)
-                visited = []
-                for root, dirs, files in os.walk(inpath, followlinks=True):
-                    VLOG("ROOT: %s" % root)
-                    for file in files:
-                        VLOG("FILE: %s" % os.path.join(root, file), 1)
-                        if file == 'AppxManifest.xml':
-#                             VLOG("APPX: %s" % os.path.join(root, file))
-                            print(parser.parse(os.path.join(root, file)))
-                            print('\tManifest: %s\n' % os.path.join(root, file))
+                if not recurse:
+                    for n, f in { APPX_MANIFEST: dump_manifest, CONFIG_SQLITE: dump_config }.items():
+                        file = os.path.join(inpath, n)
+                        VLOG("FILE: %s" % file)
+                        if os.path.isfile(file):
+                            f(file)
+                else:
+                    visited = []
+                    for root, dirs, files in os.walk(inpath, followlinks=True):
+                        VLOG("ROOT: %s" % root)
+                        for file in files:
+                            for dir in dirs:
+                                path = os.path.join(root, dir)
+                                path = os.path.realpath(path)
+                                if path in visited:
+                                    dirs.remove(dir)
+                                else:
+                                    visited.append(path)
+                            VLOG("FILE: %s" % os.path.join(root, file), 1)
+                            if file == APPX_MANIFEST:
+                                dump_manifest(os.path.join(root, file))
+                            elif file == CONFIG_SQLITE:
+                                dump_config(os.path.join(root, file))
+
             else:
-                print >> sys.stderr, 'No such directory: ' + inpath
+                print >> sys.stderr, 'No such file or directory: ' + inpath
 
 #         def process_poths(paths):
 #             for inpath in paths:
@@ -152,11 +179,11 @@ USAGE
         ### handle keyboard interrupt ###
         return 0
     except Exception, e:
-        if DEBUG or TESTRUN:
-            raise(e)
         indent = len(program_name) * " "
         sys.stderr.write(program_name + ": " + repr(e) + "\n")
-        sys.stderr.write(indent + "  for help use --help")
+        sys.stderr.write(indent + "  for help use --help\n")
+        if DEBUG or TESTRUN:
+            raise(e)
         return 2
 
 if __name__ == "__main__":
